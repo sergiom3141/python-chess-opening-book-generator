@@ -1,0 +1,132 @@
+#!/home/sergio/venv/bin/python
+
+import re
+import pickle
+import chess,chess.pgn
+#from os import listdir,walk,path
+import os
+from multiprocessing import Pool
+
+
+
+def tableEntry(result):
+	if result == "1-0":
+		return {'white':1,'black':0,'draw':0,'timesOccurred':1}
+	elif result == "0-1":
+		return {'white':0,'black':1,'draw':0,'timesOccurred':1}
+	else:
+		return {'white':0,'black':0,'draw':1,'timesOccurred':1}
+
+def updateTableEntry(positionToUpdate,tableEntryToAdd,tallies):
+	if positionToUpdate not in tallies:
+		tallies[positionToUpdate] = tableEntryToAdd
+	else:
+		for tallyStat in tallies[positionToUpdate]:
+			tallies[positionToUpdate][tallyStat] += tableEntryToAdd[tallyStat]
+	return tallies[positionToUpdate]
+
+def merge(pairofhashtables):
+		
+	if len(pairofhashtables) == 1:
+		return pairofhashtables[0]
+
+	table1 = pairofhashtables[0]
+	table2 = pairofhashtables[1]
+	
+	if len(table1) > len(table2):
+		maxdict = table1
+		mindict = table2
+		
+	else:
+		maxdict = table2
+		mindict = table1
+		
+	for position in mindict:
+		updateTableEntry(position,mindict[position],maxdict)
+
+	return maxdict
+
+depth = 15
+tallies = {}
+fileList = []
+
+def processGames(file):
+	table = {}
+
+	with open(file,'r') as currentGameDB:
+		
+		while True:
+			
+			nextGame = chess.pgn.read_game(currentGameDB)
+	
+			if type(nextGame) == type(None):
+				break
+	
+			result = nextGame.headers["Result"]
+	
+			if result == "*":
+				continue
+				
+			board = nextGame.board()
+			moveCounter = 0
+			
+			for move in nextGame.mainline_moves():
+	
+				moveCounter += 1
+				if moveCounter > depth:
+					break
+				
+				board.push(move)
+				position = board.fen()
+				updateTableEntry(position,tableEntry(result),table)
+				
+	print('another file done: ' + str(os.path.getsize(file) / 1000000) + 'MB')
+	return table
+
+
+directory = "/mnt/dropbox/scripts/projects/chessDB/chunkedData"
+
+for root, dirs, files in os.walk(directory):
+	for file in files:
+		if file.endswith('.pgn'):
+			fileList.append(os.path.join(root,file))
+
+
+with Pool(os.cpu_count()) as p:
+
+	listoftables = p.map_async(processGames,fileList).get()
+	print('finished reading from files')
+
+	mergedepth = 1
+	
+	while True:
+
+		if len(listoftables) == 1:
+			finaltable = listoftables[0]
+			break
+			
+		print(mergedepth)
+		mergedepth += 1
+		
+		newpairsoftables = [ [listoftables[2 * i], listoftables[2 * i + 1]] for i in range(0,len(listoftables) // 2)]
+		
+		if len(listoftables) % 2 != 0:
+			newpairsoftables.append( [listoftables[ len(listoftables) - 1 ]] )
+			
+		listoftables = p.map_async(merge,newpairsoftables).get()
+
+		
+	p.close()
+	p.join()
+
+
+print(len(finaltable))
+print('merge successful')
+
+# ~compressedTallies = {}
+# ~for position in finaltable:
+	# ~if finaltable[position]['timesOccurred'] > 1:
+		# ~compressedTallies[position] = finaltable[position]
+
+with open('fullyParTally','wb') as data:
+	pickle.dump(finaltable,data,protocol=pickle.HIGHEST_PROTOCOL)

@@ -1,0 +1,61 @@
+#!/home/sergio/venv/bin/python
+
+from operator import itemgetter
+import pickle
+import chess
+import sys
+
+
+def calcWinningPercent(position,tallyTable):
+	percentages = {}
+
+	for tallyStat in tallyTable[position]:
+		if tallyStat != 'timesOccurred':
+			percentages[tallyStat] =round(tallyTable[position][tallyStat] / tallyTable[position]['timesOccurred'] * 100,1)
+		else:
+			continue
+
+	return percentages
+
+
+with open('fullyParTally','rb') as otherData:
+	tallies = pickle.load(otherData)
+
+print("There are " + str(len(tallies)) + " positions in the database.\n")
+
+navigating = True
+board = chess.Board()
+gamePosition = board.fen()
+
+while navigating:
+
+	listOfMoveStrings = []
+
+	for move in board.legal_moves:
+		moveInChess = board.san(move)
+		board.push(move)
+		nextGamePosition = board.fen()
+
+		if nextGamePosition in tallies:
+			positionFrequency = tallies[nextGamePosition]['timesOccurred']
+			posFreqString = str(positionFrequency)
+			winPercentages = str(calcWinningPercent(nextGamePosition,tallies))
+
+			listOfMoveStrings.append((str(moveInChess + ': ' + winPercentages + ' n = ' + posFreqString),positionFrequency))
+
+		board.pop()
+
+	listOfMoveStrings.sort(reverse=True, key=itemgetter(1))
+	print(board,'\n')
+
+	for move in listOfMoveStrings:
+		moveOutputString = move[0]
+		print(moveOutputString)
+
+	nextMove = input("\nWhat move would you like to try next?: ")
+	print('\n')
+
+	if nextMove == 'undo':
+		board.pop()
+	else:
+		board.push_san(nextMove)
